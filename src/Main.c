@@ -1,8 +1,6 @@
-#include "/home/codeleaded/System/Static/Library/ComponentPack.h"
-#include "/home/codeleaded/System/Static/Library/ComponentML.h"
-#include "/home/codeleaded/System/Static/Library/ComponentDefines.h"
 #include "/home/codeleaded/System/Static/Library/WindowEngine1.0.h"
 #include "/home/codeleaded/System/Static/Library/NeuralNetwork.h"
+#include "/home/codeleaded/System/Static/Library/Thread.h"
 
 #define PADDLE_1_POSX       0.05f
 #define PADDLE_2_POSX       0.95f
@@ -18,6 +16,11 @@
 #define PADDLE_1_COLOR      BLUE
 #define PADDLE_2_COLOR      RED
 #define BALL_COLOR          WHITE
+
+#define NN_LEARNRATE        0.5f
+#define NN_DELAY            1000
+#define NN_TICKSUPDATE      10
+
 
 typedef struct PongObject{
     Vec2 p;
@@ -135,6 +138,7 @@ typedef struct PongInfos{
 float ElapTime = 0.05f;
 NeuralNetwork neuralnet;
 AlxFont infofont;
+Thread updaterai;
 
 NeuralRewardType NeuralEnviroment_Func_Step(NeuralEnviroment* ne,int d){
     NeuralRewardType reward = aireward;
@@ -214,6 +218,40 @@ void NeuralNetwork_Render(NeuralNetwork* nn){
     }
 }
 
+void* UpdateAi(void* arg){
+    Thread* t = (Thread*)arg;
+
+    int update = NN_TICKSUPDATE;
+    while(t->running){
+        if(update >= NN_TICKSUPDATE){
+            printf("\033[2J\033[H");
+
+            int state = NeuralNetwork_PlanDecision(&neuralnet);
+            if(state<0){
+                printf("Error! ");
+                fflush(stdout);
+            }else{
+                NeuralType outs[3] = { 0.0f,0.0f,0.0f };
+                outs[state] = 1.0f;
+
+                NeuralNetwork_CalculateCosts(&neuralnet,outs);
+                NeuralNetwork_ApplyCosts(&neuralnet,NN_LEARNRATE);
+
+                printf("Updated! ");
+                fflush(stdout);
+            }
+            aireward = 0.0f;
+            update = 0;
+        }else
+            update++;
+
+        Thread_Sleep_M(NN_DELAY);
+        printf(".");
+        fflush(stdout);
+    }
+    return NULL;
+}
+
 void Setup(AlxWindow* w){
     infofont = AlxFont_MAKE_YANIS(12,12);
 
@@ -231,11 +269,12 @@ void Setup(AlxWindow* w){
         ),
         (NeuralLayerCount[]){ 5,2,3,NeuralLayerCount_End }
     );
+
+    updaterai = Thread_New(NULL,UpdateAi,&updaterai);
+    Thread_Start(&updaterai);
 }
 void Update(AlxWindow* w){
     ReloadAlxFont(GetWidth() * 0.025f,GetHeight() * 0.05f);
-
-    printf("\033[2J\033[H");
 
     w->ElapsedTime = ElapTime;
     if(Stroke(ALX_KEY_Q).DOWN)  ElapTime *= 1.01f;
@@ -261,7 +300,7 @@ void Update(AlxWindow* w){
             outs[state] = 1.0f;
 
             NeuralNetwork_CalculateCosts(&neuralnet,outs);
-            NeuralNetwork_ApplyCosts(&neuralnet,0.5f);
+            NeuralNetwork_ApplyCosts(&neuralnet,NN_LEARNRATE);
         }
         aireward = 0.0f;
     }
@@ -271,7 +310,6 @@ void Update(AlxWindow* w){
     NeuralEnviromentBlock_Free(&nb);
 
     DecisionState d = NeuralNetwork_GetDecision(&neuralnet);
-
     if(d.state==0)      paddle2.v.y = -PADDLE_SPEED;
     else if(d.state==1) paddle2.v.y = PADDLE_SPEED;
     else if(d.state==2) paddle2.v.y = 0.0f;
@@ -302,6 +340,8 @@ void Update(AlxWindow* w){
     String_Free(&str);
 }
 void Delete(AlxWindow* w){
+    Thread_Stop(&updaterai);
+
 	NeuralNetwork_Free(&neuralnet);
     AlxFont_Free(&infofont);
 }
