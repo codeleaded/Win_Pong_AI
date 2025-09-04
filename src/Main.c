@@ -17,9 +17,8 @@
 #define PADDLE_2_COLOR      RED
 #define BALL_COLOR          WHITE
 
-#define NN_LEARNRATE        0.1f
-#define NN_DELAY            20
-#define NN_TICKSUPDATE      3
+#define NN_LEARNRATE        0.01f
+#define NN_DELAY            10
 #define NN_PATH             "./data/Model.nnalx"
 
 
@@ -183,6 +182,9 @@ void NeuralEnviroment_Func_Step(RLNeuralNetwork* nn,DecisionState* ds,int d){
     NeuralReward ret = aireward;
     aireward = reward;
 
+    PongInfos pi_after = PongInfos_New();
+    DecisionState_SetAfter(ds,(NeuralType*)&pi_after);
+
     DecisionState_SetReward(ds,ret);
 }
 void NeuralEnviroment_Func_Undo(RLNeuralNetwork* nn,DecisionState* ds){
@@ -258,7 +260,7 @@ void Update(AlxWindow* w){
     }
     if(Stroke(ALX_KEY_Z).PRESSED){
         ai = ai + 1;
-        if(ai > 2) ai = 0;
+        if(ai > 3) ai = 0;
     }
     if(Stroke(ALX_KEY_E).PRESSED){
         NeuralNetwork_Save(&nn.nn,NN_PATH);
@@ -289,10 +291,10 @@ void Update(AlxWindow* w){
 
 
     if(training){
-        RLNeuralNetwork_LearnDecisionState(&nn,DECISIONSTATE_MAX,NN_LEARNRATE);
+        RLNeuralNetwork_LearnDecisionState(&nn,0.99f,NN_LEARNRATE);
     }
 
-    float dy = (ball.p.y + ball.d.y * 0.5f) - (paddle1.p.y + paddle1.d.y * 0.5f);
+    const float dy = (ball.p.y + ball.d.y * 0.5f) - (paddle1.p.y + paddle1.d.y * 0.5f);
     paddle1.v.y = PADDLE_SPEED * F32_Sign(dy);
 
     if(ai == 0){
@@ -307,6 +309,9 @@ void Update(AlxWindow* w){
     }else if(ai == 1){
         int state = (int)Random_u32_MinMax(0,3) - 1;
         paddle2.v.y = PADDLE_SPEED * state;
+    }else if(ai == 2){
+        const float dy = (ball.p.y + ball.d.y * 0.5f) - (paddle2.p.y + paddle2.d.y * 0.5f);
+        paddle2.v.y = PADDLE_SPEED * F32_Sign(dy);
     }else{
         if(Stroke(ALX_KEY_UP).DOWN)         paddle2.v.y = -PADDLE_SPEED;
         else if(Stroke(ALX_KEY_DOWN).DOWN)  paddle2.v.y = PADDLE_SPEED;
