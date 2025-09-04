@@ -6,7 +6,7 @@
 #define PADDLE_2_POSX       0.95f
 #define PADDLE_WIDTH        0.025f
 #define PADDLE_HEIGHT       0.18f
-#define PADDLE_SPEED        0.50f
+#define PADDLE_SPEED        0.25f
 
 #define BALL_WIDTH          0.0125f
 #define BALL_HEIGHT         0.025f
@@ -17,8 +17,9 @@
 #define PADDLE_2_COLOR      RED
 #define BALL_COLOR          WHITE
 
-#define NN_LEARNRATE        0.01f
-#define NN_DELAY            10
+#define NN_LEARNRATE        0.0001f
+#define NN_DELTA            0.99f
+#define NN_DELAY            1
 #define NN_PATH             "./data/Model.nnalx"
 
 
@@ -82,10 +83,17 @@ void PongObject_Update(PongObject* po,float t){
 }
 void PongObject_Collision(PongObject* po,PongObject* target){
     if(Overlap_Rect_Rect((Rect){ po->p,po->d },(Rect){ target->p,target->d })){
-        float s = Vec2_Mag(target->v);
+        const float s = Vec2_Mag(target->v);
+        const float dx = F32_Sign(target->p.x - po->p.x);
+        
+        const float pm = po->p.x + po->d.x * 0.5f;
+        const float offset = dx * 0.5f * (po->d.x + target->d.x);
+
+        target->p.x = pm + offset - 0.5f * target->d.x;
         target->v.x *= -1.0f;
         target->v = Vec2_Mulf(Vec2_Norm(target->v),s + SPEED_ACCSPEED);
-        target->v.y += po->v.y * 0.1f;
+        target->v.y += F32_Sign(target->v.y) * F32_Abs(po->v.y) * 0.1f;
+        target->v.y = F32_Abs(target->v.y) * F32_Sign(po->v.y);
     }
 }
 void PongObject_Render(PongObject* po){
@@ -96,7 +104,7 @@ void PongObject_Step_Update(PongObject* po,float t){
     po->p = Vec2_Add(po->p,Vec2_Mulf(po->v,t));
 
     if(po->p.x < -po->d.x){
-        //aireward += 10.0f;
+        aireward += 10.0f;
     }
     if(po->p.x > 1.0f){
         aireward -= 1.0f;
@@ -112,10 +120,17 @@ void PongObject_Step_Update(PongObject* po,float t){
 }
 void PongObject_Step_Collision(PongObject* po,PongObject* target){
     if(Overlap_Rect_Rect((Rect){ po->p,po->d },(Rect){ target->p,target->d })){
-        float s = Vec2_Mag(target->v);
+        const float s = Vec2_Mag(target->v);
+        const float dx = F32_Sign(target->p.x - po->p.x);
+        
+        const float pm = po->p.x + po->d.x * 0.5f;
+        const float offset = dx * 0.5f * (po->d.x + target->d.x);
+
+        target->p.x = pm + offset - 0.5f * target->d.x;
         target->v.x *= -1.0f;
         target->v = Vec2_Mulf(Vec2_Norm(target->v),s + SPEED_ACCSPEED);
-        target->v.y += po->v.y;
+        target->v.y += F32_Sign(target->v.y) * F32_Abs(po->v.y) * 0.1f;
+        target->v.y = F32_Abs(target->v.y) * F32_Sign(po->v.y);
 
         if(po == &paddle2){
             aireward += 1.0f;
@@ -142,8 +157,8 @@ typedef struct PongInfos{
 PongInfos PongInfos_New(){
     PongInfos pi;
     pi.balldx = F32_Abs(ball.p.x - paddle2.p.x);
-    pi.bally = ball.p.y;
-    pi.paddle2y = paddle2.p.y;
+    pi.bally = ball.p.y + ball.d.y * 0.5f;
+    pi.paddle2y = paddle2.p.y + paddle2.d.y * 0.5f;
     // ----------------------
     pi.ballx = ball.p.x;
     pi.paddle1y = paddle1.p.y;
@@ -161,6 +176,10 @@ float ElapTime = 0.05f;
 RLNeuralNetwork nn;
 AlxFont font;
 
+void NeuralEnviroment_Func_State(RLNeuralNetwork* nn,DecisionState* ds){
+    PongInfos pi_before = PongInfos_New();
+    DecisionState_SetBefore(ds,(NeuralType*)&pi_before);
+}
 void NeuralEnviroment_Func_Step(RLNeuralNetwork* nn,DecisionState* ds,int d){
     PongInfos pi_before = PongInfos_New();
     DecisionState_SetBefore(ds,(NeuralType*)&pi_before);
@@ -179,6 +198,15 @@ void NeuralEnviroment_Func_Step(RLNeuralNetwork* nn,DecisionState* ds,int d){
     PongObject_Step_Collision(&paddle1,&ball);
     PongObject_Step_Collision(&paddle2,&ball);
 
+    aireward += (1.0f - 
+        //Vec2_Mag(Vec2_Sub(
+        //    Vec2_Add(paddle2.p, Vec2_Mulf(paddle2.d,0.5f)),
+        //    Vec2_Add(ball.p,    Vec2_Mulf(ball.d,   0.5f))
+        //
+        (paddle2.p.y  + paddle2.d.y   * 0.5f) -
+        (ball.p.y     + ball.d.y      * 0.5f)
+    ) * 0.5f * window.ElapsedTime;
+
     NeuralReward ret = aireward;
     aireward = reward;
 
@@ -189,8 +217,8 @@ void NeuralEnviroment_Func_Step(RLNeuralNetwork* nn,DecisionState* ds,int d){
 }
 void NeuralEnviroment_Func_Undo(RLNeuralNetwork* nn,DecisionState* ds){
     PongInfos* pi = (PongInfos*)ds->before;
-    ball.p.y = pi->bally;
-    paddle2.p.y = pi->paddle2y;
+    ball.p.y = pi->bally - ball.d.y * 0.5f;
+    paddle2.p.y = pi->paddle2y - paddle2.d.y * 0.5f;
     // ----------------------
     ball.p.x = pi->ballx;
     paddle1.p.y = pi->paddle1y;
@@ -243,8 +271,9 @@ void Setup(AlxWindow* w){
     Reset();
 
     nn = RLNeuralNetwork_New(
-        NeuralNetwork_Make((unsigned int[]){ NN_INPUTS,16,NN_OUTPUTS,0 }),
+        NeuralNetwork_Make((unsigned int[]){ NN_INPUTS,32,16,NN_OUTPUTS,0 }),
         NeuralEnviroment_New(
+            (void*)NeuralEnviroment_Func_State,
             (void*)NeuralEnviroment_Func_Step,
             (void*)NeuralEnviroment_Func_Undo,
             sizeof(PongInfos) / sizeof(NeuralType),
@@ -291,10 +320,10 @@ void Update(AlxWindow* w){
 
 
     if(training){
-        RLNeuralNetwork_LearnDecisionState(&nn,0.99f,NN_LEARNRATE);
+        RLNeuralNetwork_LearnDecisionState(&nn,NN_DELTA,NN_LEARNRATE);
     }
 
-    const float dy = (ball.p.y + ball.d.y * 0.5f) - (paddle1.p.y + paddle1.d.y * 0.5f);
+    const float dy = (ball.p.y + ball.d.y * 0.5f) - (paddle1.p.y + paddle1.d.y * 0.5f + paddle1.d.y * 0.2f * Random_f64_MinMax(-1.0f,1.0f));
     paddle1.v.y = PADDLE_SPEED * F32_Sign(dy);
 
     if(ai == 0){
@@ -310,7 +339,7 @@ void Update(AlxWindow* w){
         int state = (int)Random_u32_MinMax(0,3) - 1;
         paddle2.v.y = PADDLE_SPEED * state;
     }else if(ai == 2){
-        const float dy = (ball.p.y + ball.d.y * 0.5f) - (paddle2.p.y + paddle2.d.y * 0.5f);
+        const float dy = (ball.p.y + ball.d.y * 0.5f) - (paddle2.p.y + paddle2.d.y * 0.5f + paddle1.d.y * 1.0f * Random_f64_MinMax(-1.0f,1.0f));
         paddle2.v.y = PADDLE_SPEED * F32_Sign(dy);
     }else{
         if(Stroke(ALX_KEY_UP).DOWN)         paddle2.v.y = -PADDLE_SPEED;
