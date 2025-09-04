@@ -23,11 +23,11 @@ exe:
 	./$(TARGET)
 
 debug:
-	./$(TARGET)
+	gdb ./$(TARGET)
 
 clean:
 	rm -rf $(BUILD_DIR)/*
 
-do: clean alldebug debug
-
 do: clean all exe
+
+dg: clean alldebug debug

@@ -164,7 +164,6 @@ AlxFont font;
 
 void NeuralEnviroment_Func_Step(RLNeuralNetwork* nn,DecisionState* ds,int d){
     PongInfos pi_before = PongInfos_New();
-    printf("%p -> %d > %f\n",ds->before,ds->states,ds->reward);
     DecisionState_SetBefore(ds,(NeuralType*)&pi_before);
 
     NeuralReward reward = aireward;
@@ -258,7 +257,8 @@ void Update(AlxWindow* w){
         training = !training;
     }
     if(Stroke(ALX_KEY_Z).PRESSED){
-        ai = !ai;
+        ai = ai + 1;
+        if(ai > 2) ai = 0;
     }
     if(Stroke(ALX_KEY_E).PRESSED){
         NeuralNetwork_Save(&nn.nn,NN_PATH);
@@ -287,14 +287,15 @@ void Update(AlxWindow* w){
     //else if(Stroke(ALX_KEY_DOWN).DOWN)  paddle2.v.y = PADDLE_SPEED;
     //else                                paddle2.v.y = 0.0f;
 
-    float dy = (ball.p.y + ball.d.y * 0.5f) - (paddle1.p.y + paddle1.d.y * 0.5f);
-    paddle1.v.y = PADDLE_SPEED * F32_Sign(dy);
 
     if(training){
         RLNeuralNetwork_LearnDecisionState(&nn,DECISIONSTATE_MAX,NN_LEARNRATE);
     }
 
-    if(ai){
+    float dy = (ball.p.y + ball.d.y * 0.5f) - (paddle1.p.y + paddle1.d.y * 0.5f);
+    paddle1.v.y = PADDLE_SPEED * F32_Sign(dy);
+
+    if(ai == 0){
         PongInfos pi = PongInfos_New();
         NeuralNetwork_Calc(&nn.nn,(NeuralType*)&pi);
 
@@ -303,9 +304,13 @@ void Update(AlxWindow* w){
         else if(d==1) paddle2.v.y = PADDLE_SPEED;
         else if(d==2) paddle2.v.y = 0.0f;
         else          printf("Error!\n");
+    }else if(ai == 1){
+        int state = (int)Random_u32_MinMax(0,3) - 1;
+        paddle2.v.y = PADDLE_SPEED * state;
     }else{
-        float dy = (ball.p.y + ball.d.y * 0.5f) - (paddle2.p.y + paddle2.d.y * 0.5f);
-        paddle2.v.y = PADDLE_SPEED * F32_Sign(dy);
+        if(Stroke(ALX_KEY_UP).DOWN)         paddle2.v.y = -PADDLE_SPEED;
+        else if(Stroke(ALX_KEY_DOWN).DOWN)  paddle2.v.y = PADDLE_SPEED;
+        else                                paddle2.v.y = 0.0f;
     }
 
     PongObject_Update(&paddle1,w->ElapsedTime);
