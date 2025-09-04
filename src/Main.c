@@ -140,18 +140,18 @@ void PongObject_Step_Collision(PongObject* po,PongObject* target){
 
 
 
-#define NN_INPUTS       3
+#define NN_INPUTS       4
 #define NN_OUTPUTS      3
 
 typedef struct PongInfos{
     NeuralType balldx;
     NeuralType bally;
     NeuralType paddle2y;
+    NeuralType ballvy;
     // other step values
     NeuralType ballx;
     NeuralType paddle1y;
     NeuralType ballvx;
-    NeuralType ballvy;
 } PongInfos;
 
 PongInfos PongInfos_New(){
@@ -159,11 +159,11 @@ PongInfos PongInfos_New(){
     pi.balldx = F32_Abs(ball.p.x - paddle2.p.x);
     pi.bally = ball.p.y + ball.d.y * 0.5f;
     pi.paddle2y = paddle2.p.y + paddle2.d.y * 0.5f;
+    pi.ballvy = ball.v.y;
     // ----------------------
     pi.ballx = ball.p.x;
     pi.paddle1y = paddle1.p.y;
     pi.ballvx = ball.v.x;
-    pi.ballvy = ball.v.y;
     return pi;
 }
 
@@ -198,14 +198,20 @@ void NeuralEnviroment_Func_Step(RLNeuralNetwork* nn,DecisionState* ds,int d){
     PongObject_Step_Collision(&paddle1,&ball);
     PongObject_Step_Collision(&paddle2,&ball);
 
-    aireward += (1.0f - 
-        //Vec2_Mag(Vec2_Sub(
-        //    Vec2_Add(paddle2.p, Vec2_Mulf(paddle2.d,0.5f)),
-        //    Vec2_Add(ball.p,    Vec2_Mulf(ball.d,   0.5f))
-        //
-        (paddle2.p.y  + paddle2.d.y   * 0.5f) -
-        (ball.p.y     + ball.d.y      * 0.5f)
-    ) * 0.5f * window.ElapsedTime;
+    // aireward += (1.0f - 
+    //     //Vec2_Mag(Vec2_Sub(
+    //     //    Vec2_Add(paddle2.p, Vec2_Mulf(paddle2.d,0.5f)),
+    //     //    Vec2_Add(ball.p,    Vec2_Mulf(ball.d,   0.5f))
+    //     //
+    //     (paddle2.p.y  + paddle2.d.y   * 0.5f) -
+    //     (ball.p.y     + ball.d.y      * 0.5f)
+    // ) * 0.5f * window.ElapsedTime;
+
+    const Vec2 pm = Vec2_Add(paddle2.p, Vec2_Mulf(paddle2.d,0.5f)); 
+    const Vec2 bm = Vec2_Add(ball.p,    Vec2_Mulf(ball.d,   0.5f)); 
+    const Vec2 dp = Vec2_Sub(pm,bm);
+    if(F32_Sign(dp.y) == F32_Sign(ball.v.y))
+        aireward += (1.0f - dp.y) * 0.5f * window.ElapsedTime;
 
     NeuralReward ret = aireward;
     aireward = reward;
@@ -219,11 +225,11 @@ void NeuralEnviroment_Func_Undo(RLNeuralNetwork* nn,DecisionState* ds){
     PongInfos* pi = (PongInfos*)ds->before;
     ball.p.y = pi->bally - ball.d.y * 0.5f;
     paddle2.p.y = pi->paddle2y - paddle2.d.y * 0.5f;
+    ball.v.y = pi->ballvy;
     // ----------------------
     ball.p.x = pi->ballx;
     paddle1.p.y = pi->paddle1y;
     ball.v.x = pi->ballvx;
-    ball.v.y = pi->ballvy;
 }
 
 void NeuralNetwork_Render(NeuralNetwork* nn){
@@ -271,7 +277,7 @@ void Setup(AlxWindow* w){
     Reset();
 
     nn = RLNeuralNetwork_New(
-        NeuralNetwork_Make((unsigned int[]){ NN_INPUTS,32,16,NN_OUTPUTS,0 }),
+        NeuralNetwork_Make((unsigned int[]){ NN_INPUTS,32,NN_OUTPUTS,0 }),
         NeuralEnviroment_New(
             (void*)NeuralEnviroment_Func_State,
             (void*)NeuralEnviroment_Func_Step,
@@ -301,7 +307,16 @@ void Update(AlxWindow* w){
             nn.nn = NeuralNetwork_Load(NN_PATH);
             printf("[NeuralNetwork]: Load -> Success!\n");
         }else{
-            nn.nn = NeuralNetwork_Make((unsigned int[]){ 784,16,10,0 });
+            nn = RLNeuralNetwork_New(
+                NeuralNetwork_Make((unsigned int[]){ NN_INPUTS,32,NN_OUTPUTS,0 }),
+                NeuralEnviroment_New(
+                    (void*)NeuralEnviroment_Func_State,
+                    (void*)NeuralEnviroment_Func_Step,
+                    (void*)NeuralEnviroment_Func_Undo,
+                    sizeof(PongInfos) / sizeof(NeuralType),
+                    NN_OUTPUTS
+                )
+            );
             printf("[NeuralNetwork]: Load -> Failed!\n");
         }
     }
@@ -339,7 +354,7 @@ void Update(AlxWindow* w){
         int state = (int)Random_u32_MinMax(0,3) - 1;
         paddle2.v.y = PADDLE_SPEED * state;
     }else if(ai == 2){
-        const float dy = (ball.p.y + ball.d.y * 0.5f) - (paddle2.p.y + paddle2.d.y * 0.5f + paddle1.d.y * 1.0f * Random_f64_MinMax(-1.0f,1.0f));
+        const float dy = (ball.p.y + ball.d.y * 0.5f) - (paddle2.p.y + paddle2.d.y * 0.5f + paddle1.d.y * 0.5f * Random_f64_MinMax(-1.0f,1.0f));
         paddle2.v.y = PADDLE_SPEED * F32_Sign(dy);
     }else{
         if(Stroke(ALX_KEY_UP).DOWN)         paddle2.v.y = -PADDLE_SPEED;
