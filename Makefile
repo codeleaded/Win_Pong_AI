@@ -16,10 +16,18 @@ TARGET = $(BUILD_DIR)/Main
 all: 
 	$(CC) $(CFLAGS) $(INCLUDES) ./$(SRC_DIR)/Main.c -o ./$(TARGET) $(LDFLAGS) 
 
+alldebug: 
+	$(CC) -g $(CFLAGS) $(INCLUDES) ./$(SRC_DIR)/Main.c -o ./$(TARGET) $(LDFLAGS) 
+
 exe:
+	./$(TARGET)
+
+debug:
 	./$(TARGET)
 
 clean:
 	rm -rf $(BUILD_DIR)/*
+
+do: clean alldebug debug
 
 do: clean all exe

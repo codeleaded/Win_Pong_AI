@@ -17,8 +17,8 @@
 #define PADDLE_2_COLOR      RED
 #define BALL_COLOR          WHITE
 
-#define NN_LEARNRATE        0.5f
-#define NN_DELAY            1000
+#define NN_LEARNRATE        0.1f
+#define NN_DELAY            20
 #define NN_TICKSUPDATE      3
 #define NN_PATH             "./data/Model.nnalx"
 
@@ -100,7 +100,7 @@ void PongObject_Step_Update(PongObject* po,float t){
         //aireward += 10.0f;
     }
     if(po->p.x > 1.0f){
-        aireward -= 5.0f;
+        aireward -= 1.0f;
     }
     if(po->p.y < 0.0f){
         po->p.y = 0.0f;
@@ -130,16 +130,26 @@ void PongObject_Step_Collision(PongObject* po,PongObject* target){
 #define NN_OUTPUTS      3
 
 typedef struct PongInfos{
-    float ballx;
-    float bally;
-    float paddley;
+    NeuralType balldx;
+    NeuralType bally;
+    NeuralType paddle2y;
+    // other step values
+    NeuralType ballx;
+    NeuralType paddle1y;
+    NeuralType ballvx;
+    NeuralType ballvy;
 } PongInfos;
 
 PongInfos PongInfos_New(){
     PongInfos pi;
-    pi.ballx = ball.p.x;
+    pi.balldx = F32_Abs(ball.p.x - paddle2.p.x);
     pi.bally = ball.p.y;
-    pi.paddley = paddle1.p.y;
+    pi.paddle2y = paddle2.p.y;
+    // ----------------------
+    pi.ballx = ball.p.x;
+    pi.paddle1y = paddle1.p.y;
+    pi.ballvx = ball.v.x;
+    pi.ballvy = ball.v.y;
     return pi;
 }
 
@@ -147,14 +157,15 @@ PongInfos PongInfos_New(){
 #define TIME_STEP   0.10f
 
 char training = 0;
+char ai = 0;
 float ElapTime = 0.05f;
 RLNeuralNetwork nn;
 AlxFont font;
-Thread updaterai;
 
-DecisionState NeuralEnviroment_Func_Step(RLNeuralNetwork* nn,int d){
-    PongInfos pi = PongInfos_New();
-    DecisionState ds = DecisionState_New((NeuralType*)&pi,NN_INPUTS,aireward);
+void NeuralEnviroment_Func_Step(RLNeuralNetwork* nn,DecisionState* ds,int d){
+    PongInfos pi_before = PongInfos_New();
+    printf("%p -> %d > %f\n",ds->before,ds->states,ds->reward);
+    DecisionState_SetBefore(ds,(NeuralType*)&pi_before);
 
     NeuralReward reward = aireward;
     aireward = 0.0f;
@@ -172,52 +183,18 @@ DecisionState NeuralEnviroment_Func_Step(RLNeuralNetwork* nn,int d){
 
     NeuralReward ret = aireward;
     aireward = reward;
-    return ds;
+
+    DecisionState_SetReward(ds,ret);
 }
-void NeuralEnviroment_Func_Undo(RLNeuralNetwork* nn,DecisionState* eb){
-    PongInfos* pi = (PongInfos*)eb->ins;
-    ball.p.x = pi->ballx;
+void NeuralEnviroment_Func_Undo(RLNeuralNetwork* nn,DecisionState* ds){
+    PongInfos* pi = (PongInfos*)ds->before;
     ball.p.y = pi->bally;
-    paddle1.p.y = pi->paddley;
-}
-void* UpdateAi(void* arg){
-    Thread* t = (Thread*)arg;
-
-    int update = NN_TICKSUPDATE;
-    while(t->running){
-        if(update >= NN_TICKSUPDATE){
-            printf("\033[2J\033[H");
-
-            RLNeuralNetwork_StepDecisionState(&nn,DECISIONSTATE_MAX);
-            RLNeuralNetwork_UpdateDecisionState(&nn,3,DECISIONSTATE_MAX);
-            
-            int state = RLNeuralNetwork_NextDecision(&nn);
-            if(state<0){
-                printf("Error! ");
-                fflush(stdout);
-            }else{
-                if(training){
-                    NeuralType outs[3] = { 0.0f,0.0f,0.0f };
-                    outs[state] = 1.0f;
-
-                    PongInfos pi = PongInfos_New();
-                    NeuralDataPair ndp = NeuralDataPair_New((NeuralType*)&pi,outs,NN_INPUTS,NN_OUTPUTS);
-                    NeuralNetwork_LearnOne(&nn.nn,&ndp,NN_LEARNRATE);
-                    NeuralDataPair_Free(&ndp);
-                }
-
-                printf("Updated! ");
-                fflush(stdout);
-            }
-            update = 0;
-        }else
-            update++;
-
-        Thread_Sleep_M(NN_DELAY);
-        printf(".");
-        fflush(stdout);
-    }
-    return NULL;
+    paddle2.p.y = pi->paddle2y;
+    // ----------------------
+    ball.p.x = pi->ballx;
+    paddle1.p.y = pi->paddle1y;
+    ball.v.x = pi->ballvx;
+    ball.v.y = pi->ballvy;
 }
 
 void NeuralNetwork_Render(NeuralNetwork* nn){
@@ -265,21 +242,23 @@ void Setup(AlxWindow* w){
     Reset();
 
     nn = RLNeuralNetwork_New(
-        NeuralNetwork_Make((unsigned int[]){ NN_INPUTS,6,NN_OUTPUTS,0 }),
+        NeuralNetwork_Make((unsigned int[]){ NN_INPUTS,16,NN_OUTPUTS,0 }),
         NeuralEnviroment_New(
             (void*)NeuralEnviroment_Func_Step,
-            (void*)NeuralEnviroment_Func_Undo
+            (void*)NeuralEnviroment_Func_Undo,
+            sizeof(PongInfos) / sizeof(NeuralType),
+            NN_OUTPUTS
         )
     );
-
-    updaterai = Thread_New(NULL,UpdateAi,&updaterai);
-    Thread_Start(&updaterai);
 }
 void Update(AlxWindow* w){
     ReloadAlxFont(GetWidth() * 0.025f,GetHeight() * 0.05f);
 
     if(Stroke(ALX_KEY_T).PRESSED){
         training = !training;
+    }
+    if(Stroke(ALX_KEY_Z).PRESSED){
+        ai = !ai;
     }
     if(Stroke(ALX_KEY_E).PRESSED){
         NeuralNetwork_Save(&nn.nn,NN_PATH);
@@ -311,14 +290,23 @@ void Update(AlxWindow* w){
     float dy = (ball.p.y + ball.d.y * 0.5f) - (paddle1.p.y + paddle1.d.y * 0.5f);
     paddle1.v.y = PADDLE_SPEED * F32_Sign(dy);
 
-    PongInfos pi = PongInfos_New();
-    NeuralNetwork_Calc(&nn.nn,(NeuralType*)&pi);
+    if(training){
+        RLNeuralNetwork_LearnDecisionState(&nn,DECISIONSTATE_MAX,NN_LEARNRATE);
+    }
 
-    int d = NeuralNetwork_Decision(&nn.nn);
-    if(d==0)      paddle2.v.y = -PADDLE_SPEED;
-    else if(d==1) paddle2.v.y = PADDLE_SPEED;
-    else if(d==2) paddle2.v.y = 0.0f;
-    else          printf("Error!\n");
+    if(ai){
+        PongInfos pi = PongInfos_New();
+        NeuralNetwork_Calc(&nn.nn,(NeuralType*)&pi);
+
+        int d = NeuralNetwork_Decision(&nn.nn);
+        if(d==0)      paddle2.v.y = -PADDLE_SPEED;
+        else if(d==1) paddle2.v.y = PADDLE_SPEED;
+        else if(d==2) paddle2.v.y = 0.0f;
+        else          printf("Error!\n");
+    }else{
+        float dy = (ball.p.y + ball.d.y * 0.5f) - (paddle2.p.y + paddle2.d.y * 0.5f);
+        paddle2.v.y = PADDLE_SPEED * F32_Sign(dy);
+    }
 
     PongObject_Update(&paddle1,w->ElapsedTime);
     PongObject_Update(&paddle2,w->ElapsedTime);
@@ -335,19 +323,17 @@ void Update(AlxWindow* w){
 
     NeuralNetwork_Render(&nn.nn);
 
-    String str = String_Format("Training: %d, T:%f, R:%f",training,ElapTime,aireward);
-    RenderCStrSizeAlxFont(&font,str.Memory,str.size,GetWidth() - 500.0f,0.0f,WHITE);
+    String str = String_Format("Training: %d, Ai: %d, T:%f, R:%f",training,ai,ElapTime,aireward);
+    RenderCStrSizeAlxFont(&font,str.Memory,str.size,GetWidth() - 600.0f,0.0f,WHITE);
     String_Free(&str);
 
     str = String_Format("%d : %d",score1,score2);
     RenderCStrSize(str.Memory,str.size,(GetWidth() - str.size * GetAlxFont()->CharSizeX) * 0.5f,0.0f,WHITE);
     String_Free(&str);
 
-    Thread_Sleep_M(25);
+    Thread_Sleep_M(NN_DELAY);
 }
 void Delete(AlxWindow* w){
-    Thread_Stop(&updaterai);
-
 	RLNeuralNetwork_Free(&nn);
     AlxFont_Free(&font);
 }
