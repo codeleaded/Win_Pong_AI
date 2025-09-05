@@ -277,7 +277,12 @@ void Setup(AlxWindow* w){
     Reset();
 
     nn = RLNeuralNetwork_New(
-        NeuralNetwork_Make((unsigned int[]){ NN_INPUTS,32,NN_OUTPUTS,0 }),
+        NeuralNetwork_Make((NeuralLayerBuilder[]){
+            NeuralLayerBuilder_Make(NN_INPUTS,"relu"),
+            NeuralLayerBuilder_Make(32,"relu"),
+            NeuralLayerBuilder_Make(NN_OUTPUTS,"softmax"),
+            NeuralLayerBuilder_End()
+        }),
         NeuralEnviroment_New(
             (void*)NeuralEnviroment_Func_State,
             (void*)NeuralEnviroment_Func_Step,
@@ -308,7 +313,12 @@ void Update(AlxWindow* w){
             printf("[NeuralNetwork]: Load -> Success!\n");
         }else{
             nn = RLNeuralNetwork_New(
-                NeuralNetwork_Make((unsigned int[]){ NN_INPUTS,32,NN_OUTPUTS,0 }),
+                NeuralNetwork_Make((NeuralLayerBuilder[]){
+                    NeuralLayerBuilder_Make(NN_INPUTS,"relu"),
+                    NeuralLayerBuilder_Make(32,"relu"),
+                    NeuralLayerBuilder_Make(NN_OUTPUTS,"softmax"),
+                    NeuralLayerBuilder_End()
+                }),
                 NeuralEnviroment_New(
                     (void*)NeuralEnviroment_Func_State,
                     (void*)NeuralEnviroment_Func_Step,
