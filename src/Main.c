@@ -345,7 +345,7 @@ void Update(AlxWindow* w){
 
 
     if(training){
-        RLNeuralNetwork_LearnDecisionState(&nn,NN_DELTA,NN_LEARNRATE);
+        RLNeuralNetwork_LearnDecisionState(&nn,NULL,NN_DELTA,NN_LEARNRATE);
     }
 
     const float dy = (ball.p.y + ball.d.y * 0.5f) - (paddle1.p.y + paddle1.d.y * 0.5f + paddle1.d.y * 0.2f * Random_f64_MinMax(-1.0f,1.0f));
